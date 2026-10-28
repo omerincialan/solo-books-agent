@@ -90,7 +90,7 @@ def test_photo_is_sent_to_the_model_and_linked_on_the_expense(monkeypatch):
         [("record_expense", {"date": "2026-10-28", "vendor": "Home Depot", "total": 41.2, "category": "Safety gear"})],
         "✅ Recorded",
     ])
-    agent.run("", images=["data:image/jpeg;base64,AAAA"], source="photo", photo="http://x/photos/abc.jpg")
+    agent.run("", images=["data:image/jpeg;base64,AAAA"], source="photo", photos=["http://x/photos/abc.jpg"])
     user_content = model.requests[0]["messages"][-1]["content"]
     assert user_content[1] == {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}
     expense = books.entries("expense")[0]

@@ -16,7 +16,7 @@ class SyncThread:
 @pytest.fixture
 def sent(monkeypatch):
     texts = []
-    monkeypatch.setattr(server, "send_text", lambda to, body: texts.append((to, body)))
+    monkeypatch.setattr(server, "send_text", lambda to, body, media_url=None: texts.append((to, body)))
     monkeypatch.setattr(server.threading, "Thread", SyncThread)
     return texts
 
@@ -51,18 +51,19 @@ def test_text_runs_agent_and_replies_by_sms(sent, monkeypatch):
 
 
 def test_photo_is_saved_acknowledged_and_passed_to_agent(sent, monkeypatch):
+    from tests.test_shoebox import receipts_photo
     calls = []
-    monkeypatch.setattr(server, "download", lambda url: b"\xff\xd8jpeg")
+    monkeypatch.setattr(server, "download", lambda url: receipts_photo(1))
+    monkeypatch.setattr(server.shoebox, "find_receipts", lambda jpeg: [(10, 10, 200, 300)])  # just one receipt
     monkeypatch.setattr(server.agent, "run", lambda text, **k: calls.append(k) or "✅ Recorded")
     r = post(server.app.test_client(), {"From": "+15550001111", "Body": "", "NumMedia": "1",
                                         "MediaUrl0": "https://api.twilio.com/m/1", "MediaContentType0": "image/jpeg"})
     assert "Got it" in r.get_data(as_text=True)
     k = calls[0]
-    assert k["source"] == "photo" and k["images"][0].startswith("data:image/jpeg;base64,")
-    name = k["photo"].rsplit("/", 1)[1]
-    assert k["photo"].startswith("http://example.com/photos/")
-    got = server.app.test_client().get(f"/photos/{name}")
-    assert got.status_code == 200 and got.data == b"\xff\xd8jpeg"
+    assert k["source"] == "photo" and len(k["images"]) == 1 and k["images"][0].startswith("data:image/jpeg;base64,")
+    assert k["photos"][0].startswith("http://example.com/photos/")
+    got = server.app.test_client().get("/photos/" + k["photos"][0].rsplit("/", 1)[1])
+    assert got.status_code == 200 and got.data[:2] == b"\xff\xd8"
 
 
 def test_photo_route_only_serves_its_own_files(sent):

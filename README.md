@@ -42,6 +42,7 @@ Owner's phone ── SMS / MMS ──> Twilio ──> /sms webhook (signature-ch
   the exact row, and replies can be checked against the sheet.
 - **Photos** (receipts) go to Muse Spark as images and are kept on the server, linked from the sheet.
 - **Voice notes** are transcribed with Muse Voice Transcribe (needs `ffmpeg` on the server).
+- **Shoebox mode:** a photo with several receipts is split with SAM 3.1, one expense per receipt.
 
 | File | What it does |
 |---|---|
@@ -49,6 +50,7 @@ Owner's phone ── SMS / MMS ──> Twilio ──> /sms webhook (signature-ch
 | `solobooks/books.py` | The Google Sheet ledger (add / update / delete / list, with IDs) |
 | `solobooks/server.py` | Twilio webhook, background processing, replies by SMS, photo links |
 | `solobooks/voice.py` | Converts voice notes to WAV and transcribes them with Muse Voice Transcribe |
+| `solobooks/shoebox.py` | Finds receipts in a photo with SAM 3.1, cuts them out, draws the numbered boxes |
 | `solobooks/trades.py` | Expense categories per trade (tree service, mechanic, tennis coach) |
 | `solobooks/memory.py` | Last few turns of the conversation (SQLite) |
 | `solobooks/photos.py` | Stores receipt photos behind unguessable links |
@@ -78,4 +80,8 @@ Oct 27. Progress log:
 - **Oct 28** – Voice notes: a voice message (AMR, M4A, MP3, OGG… converted with ffmpeg) is
   transcribed by **Muse Voice Transcribe** and handled like a text, so one spoken note can
   create several entries. The reply starts with what was heard, so the owner can check it.
-- *Next:* shoebox mode (many receipts in one photo with SAM 3.1), duplicate and sanity checks.
+- **Oct 28** – Shoebox mode: one photo of a pile of receipts. **SAM 3.1** finds each receipt
+  ("receipt" concept), the photo is cut into one image per receipt, and Muse Spark records
+  each as its own expense linked to its own cut-out. The owner gets the photo back with every
+  receipt boxed and numbered. Falls back to the whole photo if SAM finds fewer than two.
+- *Next:* duplicate and sanity checks, then deploying and testing against the live models.

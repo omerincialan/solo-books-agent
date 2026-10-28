@@ -27,9 +27,17 @@ def _money(value):
 
 # --- Tools -------------------------------------------------------------------
 
-def record_expense(date, vendor, total, category, tax=None, paid_with=None, notes=None, _ctx=None):
+def _photo_for(receipt_number, ctx):
+    photos = ctx.get("photos") or []
+    if receipt_number and 1 <= int(receipt_number) <= len(photos):
+        return photos[int(receipt_number) - 1]
+    return photos[0] if len(photos) == 1 else None
+
+
+def record_expense(date, vendor, total, category, tax=None, paid_with=None, notes=None, receipt_number=None,
+                   _ctx=None):
     return books.add("expense", dict(date=date, vendor=vendor, total=total, tax=tax, category=category,
-                                     paid_with=paid_with, notes=notes, photo=_ctx.get("photo"),
+                                     paid_with=paid_with, notes=notes, photo=_photo_for(receipt_number, _ctx),
                                      source=_ctx.get("source")))
 
 
@@ -113,7 +121,9 @@ def _schema(categories):
              {"date": date, "vendor": text, "total": {**number, "description": "Total paid, including tax"},
               "tax": number, "category": {"type": "string", "enum": categories},
               "paid_with": {**text, "description": "e.g. cash, Visa ****1234"},
-              "notes": {**text, "description": "What was bought / which job"}},
+              "notes": {**text, "description": "What was bought / which job"},
+              "receipt_number": {"type": "integer", "description":
+                  "When several receipt images were sent: which image (1, 2, 3...) this expense comes from"}},
              ["date", "vendor", "total", "category"]),
         tool("record_income", "Record money the owner received from a customer.",
              {"date": date, "payer": text, "amount": number,
@@ -155,6 +165,8 @@ How to work:
 - If the amount (or miles) is missing, ask instead of guessing. If a trip has no business purpose, record it and ask what it was for.
 - "Fix it", "delete that" etc. refer to the most recent entries below; use their IDs. Use find_entries to locate older ones.
 - For any question about money or miles, call get_totals or find_entries and quote the exact numbers from the result.
+- Receipt photos: read the date, vendor, total, tax and payment method. When several receipt images are sent,
+  record each one as its own expense with its receipt_number. If one is unreadable, say which number.
 - Expense categories: {", ".join(trade['categories'])}.
 
 Your reply is a text message: plain text, no markdown, short (max 8 lines).
@@ -164,10 +176,11 @@ Most recent entries (newest first):
 {lines}"""
 
 
-def run(text: str, images: list = None, history: list = None, source: str = "text", photo: str = None) -> str:
+def run(text: str, images: list = None, history: list = None, source: str = "text", photos: list = None) -> str:
     """
-    Handles one message from the owner. images are data URLs; history is a list
-    of earlier {"role", "content"} text turns. Returns the reply to text back.
+    Handles one message from the owner. images are data URLs (photos holds the
+    saved link for each); history is a list of earlier {"role", "content"} text
+    turns. Returns the reply to text back.
     """
     trade = get_trade(config.TRADE)
     content = [{"type": "text", "text": text or "(The owner sent this without a message.)"}]
@@ -177,7 +190,7 @@ def run(text: str, images: list = None, history: list = None, source: str = "tex
     messages = [{"role": "system", "content": _system_prompt(trade, books.recent())}]
     messages += history or []
     messages.append({"role": "user", "content": content})
-    ctx = {"source": source, "photo": photo}
+    ctx = {"source": source, "photos": photos or []}
     schema = _schema(trade["categories"])
 
     for _ in range(MAX_STEPS):

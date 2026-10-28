@@ -70,7 +70,7 @@ def test_transcribe_error_is_reported(monkeypatch):
 @pytest.fixture
 def sent(monkeypatch):
     texts = []
-    monkeypatch.setattr(server, "send_text", lambda to, body: texts.append(body))
+    monkeypatch.setattr(server, "send_text", lambda to, body, media_url=None: texts.append(body))
     monkeypatch.setattr(server.threading, "Thread", SyncThread)
     monkeypatch.setattr(server, "download", lambda url: b"audio-bytes")
     return texts

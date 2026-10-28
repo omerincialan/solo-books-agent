@@ -6,3 +6,5 @@ requests==2.32.3
 openai==1.69.0
 gspread==6.1.4
 google-auth==2.38.0
+Pillow==11.1.0
+meta_sam_parser==0.1.0
