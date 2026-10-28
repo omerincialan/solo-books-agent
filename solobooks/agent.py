@@ -9,7 +9,7 @@ import datetime
 import json
 from zoneinfo import ZoneInfo
 from openai import OpenAI
-from . import books, config
+from . import books, checks, config
 from .trades import get_trade
 
 client = OpenAI(base_url=config.META_BASE_URL, api_key=config.MODEL_API_KEY or "not-set")
@@ -34,21 +34,30 @@ def _photo_for(receipt_number, ctx):
     return photos[0] if len(photos) == 1 else None
 
 
+def _record(kind, fields, confirm, ctx):
+    """Records an entry, unless a check finds something to double-check with the owner first."""
+    if not confirm:
+        issues = checks.problems(kind, fields, books.entries(kind), today())
+        if issues:
+            return {"not_recorded": True, "needs_confirmation": issues, "details": fields}
+    return books.add(kind, fields)
+
+
 def record_expense(date, vendor, total, category, tax=None, paid_with=None, notes=None, receipt_number=None,
-                   _ctx=None):
-    return books.add("expense", dict(date=date, vendor=vendor, total=total, tax=tax, category=category,
-                                     paid_with=paid_with, notes=notes, photo=_photo_for(receipt_number, _ctx),
-                                     source=_ctx.get("source")))
+                   confirm=False, _ctx=None):
+    return _record("expense", dict(date=date, vendor=vendor, total=total, tax=tax, category=category,
+                                   paid_with=paid_with, notes=notes, photo=_photo_for(receipt_number, _ctx),
+                                   source=_ctx.get("source")), confirm, _ctx)
 
 
-def record_income(date, payer, amount, paid_with=None, purpose=None, _ctx=None):
-    return books.add("income", dict(date=date, payer=payer, amount=amount, paid_with=paid_with,
-                                    purpose=purpose, source=_ctx.get("source")))
+def record_income(date, payer, amount, paid_with=None, purpose=None, confirm=False, _ctx=None):
+    return _record("income", dict(date=date, payer=payer, amount=amount, paid_with=paid_with,
+                                  purpose=purpose, source=_ctx.get("source")), confirm, _ctx)
 
 
-def record_trip(date, miles, destination, purpose=None, _ctx=None):
-    return books.add("trip", dict(date=date, miles=miles, destination=destination, purpose=purpose,
-                                  source=_ctx.get("source")))
+def record_trip(date, miles, destination, purpose=None, confirm=False, _ctx=None):
+    return _record("trip", dict(date=date, miles=miles, destination=destination, purpose=purpose,
+                                source=_ctx.get("source")), confirm, _ctx)
 
 
 def update_entry(entry_id, changes, _ctx=None):
@@ -99,6 +108,8 @@ def get_totals(start_date=None, end_date=None, _ctx=None):
         "business_miles": round(sum(e.get("miles") or 0 for e in trips), 1),
         "mileage_deduction": deduction,
         "profit_after_mileage_deduction": _money(total_income - total_expenses - deduction),
+        # Entries that look recorded twice: [first id, second id, description]
+        "possible_duplicates": checks.duplicates_in(expenses + income + trips),
     }
 
 
@@ -110,6 +121,8 @@ def _schema(categories):
     date = {"type": "string", "description": "YYYY-MM-DD"}
     text = {"type": "string"}
     number = {"type": "number"}
+    confirm = {"type": "boolean", "description":
+               "Only true after the owner confirmed an entry that a previous call flagged in needs_confirmation"}
 
     def tool(name, description, properties, required):
         return {"type": "function", "function": {
@@ -123,16 +136,18 @@ def _schema(categories):
               "paid_with": {**text, "description": "e.g. cash, Visa ****1234"},
               "notes": {**text, "description": "What was bought / which job"},
               "receipt_number": {"type": "integer", "description":
-                  "When several receipt images were sent: which image (1, 2, 3...) this expense comes from"}},
+                  "When several receipt images were sent: which image (1, 2, 3...) this expense comes from"},
+              "confirm": confirm},
              ["date", "vendor", "total", "category"]),
         tool("record_income", "Record money the owner received from a customer.",
              {"date": date, "payer": text, "amount": number,
               "paid_with": {**text, "description": "e.g. cash, Venmo, Zelle, check"},
-              "purpose": {**text, "description": "Which job or service"}},
+              "purpose": {**text, "description": "Which job or service"}, "confirm": confirm},
              ["date", "payer", "amount"]),
         tool("record_trip", "Record business driving for the mileage tax deduction.",
              {"date": date, "miles": {**number, "description": "Total miles, both ways for a round trip"},
-              "destination": text, "purpose": {**text, "description": "Business reason for the trip"}},
+              "destination": text, "purpose": {**text, "description": "Business reason for the trip"},
+              "confirm": confirm},
              ["date", "miles", "destination"]),
         tool("update_entry", "Change fields of an existing entry by its ID.",
              {"entry_id": text, "changes": {"type": "object", "description":
@@ -165,6 +180,11 @@ How to work:
 - If the amount (or miles) is missing, ask instead of guessing. If a trip has no business purpose, record it and ask what it was for.
 - "Fix it", "delete that" etc. refer to the most recent entries below; use their IDs. Use find_entries to locate older ones.
 - For any question about money or miles, call get_totals or find_entries and quote the exact numbers from the result.
+  If get_totals lists possible_duplicates, point them out with their IDs and offer to delete the extra one.
+- If a record tool returns needs_confirmation, nothing was saved: ask the owner one short question that restates
+  the details and the concern (e.g. "Looks like E3F9A, Shell $64.10 on Oct 12. Record it again?"). Only after
+  they confirm, call the tool again with the same details and confirm=true. Other entries from the same message
+  are recorded normally.
 - Receipt photos: read the date, vendor, total, tax and payment method. When several receipt images are sent,
   record each one as its own expense with its receipt_number. If one is unreadable, say which number.
 - Expense categories: {", ".join(trade['categories'])}.

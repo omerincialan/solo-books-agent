@@ -38,6 +38,8 @@ Owner's phone ── SMS / MMS ──> Twilio ──> /sms webhook (signature-ch
 - **Muse Spark decides, code does the math.** The model chooses which tools to call; totals,
   profit and mileage deductions are computed in code, so every number it texts back comes
   from a tool result.
+- **It double-checks before it records**: possible duplicates and numbers that look like typos
+  are confirmed with the owner first (`solobooks/checks.py`).
 - **Every entry has an ID** (`E…`, `I…`, `T…`) so "fix that" and "delete the chain oil" hit
   the exact row, and replies can be checked against the sheet.
 - **Photos** (receipts) go to Muse Spark as images and are kept on the server, linked from the sheet.
@@ -51,6 +53,7 @@ Owner's phone ── SMS / MMS ──> Twilio ──> /sms webhook (signature-ch
 | `solobooks/server.py` | Twilio webhook, background processing, replies by SMS, photo links |
 | `solobooks/voice.py` | Converts voice notes to WAV and transcribes them with Muse Voice Transcribe |
 | `solobooks/shoebox.py` | Finds receipts in a photo with SAM 3.1, cuts them out, draws the numbered boxes |
+| `solobooks/checks.py` | Duplicate and sanity checks run before anything is recorded |
 | `solobooks/trades.py` | Expense categories per trade (tree service, mechanic, tennis coach) |
 | `solobooks/memory.py` | Last few turns of the conversation (SQLite) |
 | `solobooks/photos.py` | Stores receipt photos behind unguessable links |
@@ -84,4 +87,10 @@ Oct 27. Progress log:
   ("receipt" concept), the photo is cut into one image per receipt, and Muse Spark records
   each as its own expense linked to its own cut-out. The owner gets the photo back with every
   receipt boxed and numbered. Falls back to the whole photo if SAM finds fewer than two.
-- *Next:* duplicate and sanity checks, then deploying and testing against the live models.
+- **Oct 28** – Checks before recording: likely duplicates (same total and date, or same vendor
+  and amount within 3 days) and implausible values (amount far above normal, tax ≥ total or
+  over 20%, dates in the future or over a year old, 400+ mile trips) are not recorded; the
+  agent asks the owner and records only once they confirm. `get_totals` also lists entries
+  already recorded twice, so "how much profit this month?" comes with "E3F9A and E81C2 look
+  like the same receipt".
+- *Next:* deploy and test against the live Meta models, tree-service demo, video.
