@@ -9,7 +9,8 @@ from flask import Flask, request, send_from_directory, abort
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
-from . import agent, config, memory, photos
+from . import agent, config, memory, photos, voice
+from .trades import get_trade
 
 app = Flask(__name__)
 
@@ -36,15 +37,25 @@ def download(url: str) -> bytes:
 def handle(number: str, text: str, media: list):
     """Runs the agent for one incoming message and texts the reply back."""
     try:
-        images, photo = [], None
+        images, photo, heard = [], None, []
         for url, content_type in media:
             if content_type.startswith("image/"):
                 data = download(url)
                 photo = photos.save(data, content_type)
                 images.append(photos.data_url(data, content_type))
+            elif content_type.startswith("audio/") or content_type.startswith("video/"):
+                heard.append(voice.transcribe(download(url), keywords=get_trade(config.TRADE)["categories"]))
 
-        source = "photo" if images else "text"
+        if heard:
+            text = " ".join([text] + heard).strip()
+            if not text:
+                send_text(number, "🎙️ I couldn't hear anything in that voice note. Please try again.")
+                return
+        source = "photo" if images else "voice" if heard else "text"
         reply = agent.run(text, images=images, history=memory.history(number), source=source, photo=photo)
+        if heard:
+            # Show what was heard, so the owner can check it
+            reply = f"🎙️ Heard: \"{' '.join(heard)}\"\n\n{reply}"
         memory.add(number, "user", text + (" [sent a photo]" if images else ""))
         memory.add(number, "assistant", reply)
     except Exception as e:
@@ -73,8 +84,10 @@ def sms():
     media = [(request.form.get(f"MediaUrl{i}"), request.form.get(f"MediaContentType{i}", ""))
              for i in range(int(request.form.get("NumMedia", 0)))]
 
-    if media:
+    if any(t.startswith("image/") for _, t in media):
         resp.message("📸 Got it, working on it...")
+    elif media:
+        resp.message("🎙️ Got your voice note, working on it...")
     threading.Thread(target=handle, args=(number, text, media), daemon=True).start()
     return str(resp)
 

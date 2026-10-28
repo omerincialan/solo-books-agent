@@ -41,12 +41,14 @@ Owner's phone ── SMS / MMS ──> Twilio ──> /sms webhook (signature-ch
 - **Every entry has an ID** (`E…`, `I…`, `T…`) so "fix that" and "delete the chain oil" hit
   the exact row, and replies can be checked against the sheet.
 - **Photos** (receipts) go to Muse Spark as images and are kept on the server, linked from the sheet.
+- **Voice notes** are transcribed with Muse Voice Transcribe (needs `ffmpeg` on the server).
 
 | File | What it does |
 |---|---|
 | `solobooks/agent.py` | Muse Spark tool-calling loop, tools and system prompt |
 | `solobooks/books.py` | The Google Sheet ledger (add / update / delete / list, with IDs) |
 | `solobooks/server.py` | Twilio webhook, background processing, replies by SMS, photo links |
+| `solobooks/voice.py` | Converts voice notes to WAV and transcribes them with Muse Voice Transcribe |
 | `solobooks/trades.py` | Expense categories per trade (tree service, mechanic, tennis coach) |
 | `solobooks/memory.py` | Last few turns of the conversation (SQLite) |
 | `solobooks/photos.py` | Stores receipt photos behind unguessable links |
@@ -55,7 +57,7 @@ Owner's phone ── SMS / MMS ──> Twilio ──> /sms webhook (signature-ch
 
 ## Setup
 
-1. `python3 -m venv venv && venv/bin/pip install -r requirements.txt`
+1. `sudo apt install ffmpeg`, then `python3 -m venv venv && venv/bin/pip install -r requirements.txt`
 2. `cp .env.example .env` and fill it in (Meta Model API key, Twilio, owner's number, sheet ID).
 3. Google Sheet: create a service account with the Sheets API enabled, save its key as
    `google_service_account.json`, and share the sheet with it as **Editor**.
@@ -73,5 +75,7 @@ Oct 27. Progress log:
 - **Oct 27** – Agent core: Muse Spark tool-calling agent over a Google Sheet ledger with
   entry IDs; one message can record several entries; exact totals computed in code;
   Twilio webhook with signature check, background replies and conversation memory.
-- *Next:* voice notes (Muse Voice Transcribe), shoebox mode (many receipts in one photo with
-  SAM 3.1), duplicate and sanity checks.
+- **Oct 28** – Voice notes: a voice message (AMR, M4A, MP3, OGG… converted with ffmpeg) is
+  transcribed by **Muse Voice Transcribe** and handled like a text, so one spoken note can
+  create several entries. The reply starts with what was heard, so the owner can check it.
+- *Next:* shoebox mode (many receipts in one photo with SAM 3.1), duplicate and sanity checks.
