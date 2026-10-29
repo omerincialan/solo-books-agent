@@ -6,9 +6,11 @@ import asyncio
 import io
 import os
 from contextlib import aclosing
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from dataclasses import dataclass
+from typing import Optional
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 from openai import AsyncOpenAI
-from meta_sam_parser import image_segmentation_format, parse_responses_stream
+from meta_sam_parser import decode_mask_to_raster, image_segmentation_format, parse_responses_stream
 from . import config
 
 SAM_MODEL = os.getenv("SAM_MODEL", "sam-3.1")
@@ -17,6 +19,15 @@ MAX_SIDE = 2048            # photos are scaled down to this before anything else
 MIN_AREA = 0.01            # ignore detections smaller than 1% of the photo
 MIN_CONFIDENCE = 0.3       # ignore detections SAM itself isn't sure about
 PADDING = 0.03             # margin added around each cut-out
+COLORS = [(0, 200, 90), (255, 140, 0), (30, 144, 255), (220, 20, 140), (150, 90, 255), (0, 190, 200)]
+
+
+@dataclass
+class Found:
+    """One receipt SAM found: its box (left, top, right, bottom) in photo pixels, and the
+    exact shape SAM traced, as a black-and-white image the size of the box (white = receipt)."""
+    box: tuple
+    mask: Optional[Image.Image] = None
 
 
 def prepare(image: bytes) -> bytes:
@@ -51,6 +62,15 @@ async def _events(stream):
                    "content_index": lane[2], "text": part.get("text", "")}
 
 
+def _mask_image(record) -> Image.Image:
+    """SAM masks are box-local rasters of 0/1 values; scaled to the box if their sizes differ."""
+    raster = decode_mask_to_raster(record.mask)
+    mask = Image.frombytes("L", (record.mask.width, record.mask.height), bytes(raster).translate(bytes([0, 255]) + bytes(254)))
+    b = record.bounds
+    size = (max(1, round(b.right - b.left)), max(1, round(b.bottom - b.top)))
+    return mask if mask.size == size else mask.resize(size)
+
+
 async def _segment(jpeg: bytes) -> list:
     from .photos import data_url
     async with AsyncOpenAI(base_url=config.META_BASE_URL, api_key=config.MODEL_API_KEY or "not-set") as api:
@@ -62,8 +82,17 @@ async def _segment(jpeg: bytes) -> list:
             result = await parse_responses_stream(events, image_segmentation_format()).final_result()
     if result.outcome.status != "completed":
         raise RuntimeError(f"SAM did not finish: {getattr(result.outcome, 'reason', 'unknown')}")
-    # Boxes are in pixels of the photo we sent ("source-media coordinates")
-    return [(r.left, r.top, r.right, r.bottom) for r in result.records
+
+    # Boxes and masks are in pixels of the photo we sent ("source-media coordinates"),
+    # and refer to the same receipt through object_id
+    masks = {}
+    for r in result.records:
+        if r.kind == "mask":
+            try:
+                masks[r.object_id] = _mask_image(r)
+            except Exception as e:
+                print("Could not decode a SAM mask:", repr(e))
+    return [Found((r.left, r.top, r.right, r.bottom), masks.get(r.object_id)) for r in result.records
             if r.kind == "box" and (r.confidence is None or r.confidence >= MIN_CONFIDENCE)]
 
 
@@ -94,10 +123,16 @@ def clean_boxes(boxes: list, width: int, height: int) -> list:
     return [box for row in rows for box in sorted(row, key=lambda b: b[0])]
 
 
+def clean(found: list, width: int, height: int) -> list:
+    """clean_boxes for Found receipts, keeping each receipt's mask with its box."""
+    by_box = {f.box: f for f in found}
+    return [by_box[box] for box in clean_boxes(list(by_box), width, height)]
+
+
 def find_receipts(jpeg: bytes) -> list:
-    """Boxes (left, top, right, bottom) of the receipts in a prepared photo."""
+    """The receipts SAM finds in a prepared photo, as Found, in reading order."""
     width, height = Image.open(io.BytesIO(jpeg)).size
-    return clean_boxes(asyncio.run(_segment(jpeg)), width, height)
+    return clean(asyncio.run(_segment(jpeg)), width, height)
 
 
 def cut_out(jpeg: bytes, boxes: list) -> list:
@@ -114,21 +149,35 @@ def cut_out(jpeg: bytes, boxes: list) -> list:
     return crops
 
 
-def annotate(jpeg: bytes, boxes: list) -> bytes:
-    """The photo with each found receipt boxed and numbered, to text back to the owner."""
+def annotate(jpeg: bytes, found: list) -> bytes:
+    """The photo with each receipt SAM found tinted, outlined along the shape SAM traced, and
+    numbered, to text back to the owner. Receipts without a mask get a rectangle."""
     img = Image.open(io.BytesIO(jpeg)).convert("RGB")
-    draw = ImageDraw.Draw(img)
     line = max(4, img.width // 250)
+    for number, f in enumerate(found, start=1):
+        color = COLORS[(number - 1) % len(COLORS)]
+        left, top, right, bottom = (round(v) for v in f.box)
+        if f.mask is not None:
+            mask = Image.new("L", img.size)
+            mask.paste(f.mask, (left, top))
+            tint = Image.new("RGB", img.size, color)
+            img.paste(tint, (0, 0), mask.point(lambda v: 70 if v else 0))     # light tint over the receipt
+            edge = ImageChops.subtract(mask.filter(ImageFilter.MaxFilter(2 * line + 1)), mask)
+            img.paste(tint, (0, 0), edge)                                    # solid outline along its shape
+        else:
+            ImageDraw.Draw(img).rectangle((left, top, right, bottom), outline=color, width=line)
+        _label(img, str(number), (left + line, top + line), color, line)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=85)
+    return out.getvalue()
+
+
+def _label(img, text, at, color, pad):
+    draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.load_default(size=max(24, img.width // 25))
     except TypeError:  # older Pillow
         font = ImageFont.load_default()
-    for number, (left, top, right, bottom) in enumerate(boxes, start=1):
-        draw.rectangle((left, top, right, bottom), outline=(0, 200, 90), width=line)
-        label = str(number)
-        x0, y0, x1, y1 = draw.textbbox((left + line, top + line), label, font=font)
-        draw.rectangle((x0 - line, y0 - line, x1 + line, y1 + line), fill=(0, 200, 90))
-        draw.text((left + line, top + line), label, fill="white", font=font)
-    out = io.BytesIO()
-    img.save(out, "JPEG", quality=85)
-    return out.getvalue()
+    x0, y0, x1, y1 = draw.textbbox(at, text, font=font)
+    draw.rectangle((x0 - pad, y0 - pad, x1 + pad, y1 + pad), fill=color)
+    draw.text(at, text, fill="white", font=font)

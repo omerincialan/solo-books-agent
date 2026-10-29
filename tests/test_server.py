@@ -54,7 +54,7 @@ def test_photo_is_saved_acknowledged_and_passed_to_agent(sent, monkeypatch):
     from tests.test_shoebox import receipts_photo
     calls = []
     monkeypatch.setattr(server, "download", lambda url: receipts_photo(1))
-    monkeypatch.setattr(server.shoebox, "find_receipts", lambda jpeg: [(10, 10, 200, 300)])  # just one receipt
+    monkeypatch.setattr(server.shoebox, "find_receipts", lambda jpeg: [server.shoebox.Found((10, 10, 200, 300))])  # just one receipt
     monkeypatch.setattr(server.agent, "run", lambda text, **k: calls.append(k) or "✅ Recorded")
     r = post(server.app.test_client(), {"From": "+15550001111", "Body": "", "NumMedia": "1",
                                         "MediaUrl0": "https://api.twilio.com/m/1", "MediaContentType0": "image/jpeg"})

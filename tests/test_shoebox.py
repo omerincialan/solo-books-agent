@@ -57,7 +57,49 @@ def test_cut_out_and_annotate():
     assert len(crops) == 3
     w, h = size(crops[0])
     assert 300 <= w <= 320 and 620 <= h <= 660          # receipt plus a small margin
-    assert size(shoebox.annotate(jpeg, RECEIPTS)) == (1200, 900)
+    assert size(shoebox.annotate(jpeg, [shoebox.Found(b) for b in RECEIPTS])) == (1200, 900)
+
+
+def ellipse_mask(box):
+    """A receipt-shaped mask that is clearly not a rectangle: an ellipse filling the box."""
+    w, h = box[2] - box[0], box[3] - box[1]
+    mask = Image.new("L", (w, h))
+    ImageDraw.Draw(mask).ellipse((0, 0, w - 1, h - 1), fill=255)
+    return mask
+
+
+def test_outline_follows_the_shape_sam_traced():
+    jpeg = shoebox.prepare(receipts_photo(1))
+    box = RECEIPTS[0]
+    out = Image.open(io.BytesIO(shoebox.annotate(jpeg, [shoebox.Found(box, ellipse_mask(box))]))).convert("RGB")
+    before = Image.open(io.BytesIO(jpeg)).convert("RGB")
+    cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+    # The box corner is outside the ellipse: untouched (no rectangle drawn)
+    assert out.getpixel((box[2] - 3, box[3] - 3)) == pytest.approx(before.getpixel((box[2] - 3, box[3] - 3)), abs=12)
+    # Just outside the ellipse's left edge, at mid-height, the outline is drawn in the first color
+    r, g, b = out.getpixel((box[0] - 2, cy))
+    assert g > 150 and r < 80
+    # Inside, the receipt is tinted but still readable (lighter than the outline)
+    inside = out.getpixel((cx, cy))
+    assert inside != before.getpixel((cx, cy)) and sum(inside) > 400
+
+
+def test_sam_masks_are_decoded_and_scaled_to_their_box(monkeypatch):
+    from types import SimpleNamespace as NS
+    raster = bytes([1] * 50 + [0] * 50)                      # 10x10 mask: top half is the receipt
+    monkeypatch.setattr(shoebox, "decode_mask_to_raster", lambda mask: raster)
+    record = NS(mask=NS(width=10, height=10), bounds=NS(left=100, top=100, right=120, bottom=120))
+    mask = shoebox._mask_image(record)
+    assert mask.size == (20, 20)
+    assert mask.getpixel((10, 2)) == 255 and mask.getpixel((10, 17)) == 0
+
+
+def test_clean_keeps_masks_with_their_boxes():
+    masks = [ellipse_mask(b) for b in RECEIPTS]
+    found = [shoebox.Found(RECEIPTS[2], masks[2]), shoebox.Found(RECEIPTS[0], masks[0]),
+             shoebox.Found((500, 800, 510, 810)), shoebox.Found(RECEIPTS[1], masks[1])]
+    cleaned = shoebox.clean(found, 1200, 900)
+    assert [f.box for f in cleaned] == RECEIPTS and [f.mask for f in cleaned] == masks
 
 
 def test_sam_request_matches_the_meta_cookbook(monkeypatch):
@@ -101,7 +143,8 @@ PHOTO = {"From": "+15550001111", "Body": "", "NumMedia": "1",
 
 def test_shoebox_photo_becomes_one_image_per_receipt(sent, monkeypatch):
     calls = []
-    monkeypatch.setattr(server.shoebox, "find_receipts", lambda jpeg: RECEIPTS)
+    monkeypatch.setattr(server.shoebox, "find_receipts",
+                        lambda jpeg: [shoebox.Found(b, ellipse_mask(b)) for b in RECEIPTS])
     monkeypatch.setattr(server.agent, "run", lambda text, **k: calls.append((text, k)) or "✅ Recorded 3 receipts")
     post(server.app.test_client(), PHOTO)
 

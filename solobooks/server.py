@@ -45,16 +45,16 @@ def read_photo(data: bytes, content_type: str):
         print("Could not open the photo, sending it as is:", repr(e))
         return [photos.data_url(data, content_type)], [photos.save(data, content_type)], "", None
     try:
-        boxes = shoebox.find_receipts(jpeg)
+        found = shoebox.find_receipts(jpeg)
     except Exception as e:
         print("SAM error, using the whole photo:", repr(e))
-        boxes = []
-    if len(boxes) < 2:
+        found = []
+    if len(found) < 2:
         return [photos.data_url(jpeg, "image/jpeg")], [photos.save(jpeg, "image/jpeg")], "", None
 
-    crops = shoebox.cut_out(jpeg, boxes)
+    crops = shoebox.cut_out(jpeg, [f.box for f in found])
     links = [photos.save(crop, "image/jpeg") for crop in crops]
-    annotated = photos.save(shoebox.annotate(jpeg, boxes), "image/jpeg")
+    annotated = photos.save(shoebox.annotate(jpeg, found), "image/jpeg")
     note = (f"\n(This photo contains {len(crops)} receipts. They were cut out with SAM and sent as images "
             f"1 to {len(crops)}: record each one with its receipt_number.)")
     return [photos.data_url(c, "image/jpeg") for c in crops], links, note, annotated
