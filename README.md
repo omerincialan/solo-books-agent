@@ -104,6 +104,20 @@ flowchart LR
 | `scripts/smoke_test.py` | Checks your Meta Model API key, tool calling and vision with real calls |
 | `tests/` | Tests with a scripted Muse Spark and an in-memory sheet (run on every push) |
 
+## What's next
+
+Planned after the hackathon (not built yet):
+
+- **Run privately on the owner's own computer:** move the agent to **Muse Glimmer**, Meta's
+  open-weight model, running locally (it is ~30B parameters and, per Meta's open-model
+  cookbook, runs quantized on a laptop with 32 GB+ of memory): financial data stays on their
+  machine, with no per-message model cost. The code already talks to an OpenAI-compatible
+  endpoint, so the switch is mostly configuration; it still needs testing.
+- **More of the back office by text:** income from photos of checks, invoices and payment
+  reminders, a monthly summary for the accountant.
+- **Connect accounting software** such as QuickBooks, in addition to the Google Sheet.
+- **More trades and more owners:** sign-up by text, one sheet per business.
+
 ## Setup
 
 1. `sudo apt install ffmpeg`, then `python3 -m venv venv && venv/bin/pip install -r requirements.txt`
