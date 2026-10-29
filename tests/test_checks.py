@@ -49,11 +49,12 @@ def test_normal_entries_pass():
 
 
 def test_duplicate_is_not_recorded_until_confirmed():
-    first = agent.record_expense(TODAY, "Shell", 64.1, "Fuel", _ctx={})
-    again = agent.record_expense(TODAY, "Shell", 64.1, "Fuel", _ctx={})
+    shell = dict(date=TODAY, vendor="Shell", total=64.1, category="Fuel")
+    first = agent.record_expense(**shell, _ctx={})
+    again = agent.record_expense(**shell, _ctx={})
     assert again["not_recorded"] and first["id"] in again["needs_confirmation"][0]
     assert len(books.entries("expense")) == 1
-    confirmed = agent.record_expense(TODAY, "Shell", 64.1, "Fuel", confirm=True, _ctx={})
+    confirmed = agent.record_expense(**shell, confirm=True, _ctx={})
     assert confirmed["id"] and len(books.entries("expense")) == 2
 
 

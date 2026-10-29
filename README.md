@@ -93,4 +93,10 @@ Oct 27. Progress log:
   agent asks the owner and records only once they confirm. `get_totals` also lists entries
   already recorded twice, so "how much profit this month?" comes with "E3F9A and E81C2 look
   like the same receipt".
-- *Next:* deploy and test against the live Meta models, tree-service demo, video.
+- **Oct 29** – Deployed and tested end to end on the live Meta Model API from a real phone:
+  one text recorded a trip, an expense and income (Muse Spark tool calling); a voice note was
+  transcribed by Muse Voice Transcribe and recorded; one photo of three receipts was split by
+  SAM 3.1 into three expenses, with the numbered photo texted back; "how much profit this
+  month?" returned exact totals. Expenses without a store are now recorded without a vendor
+  and the agent asks where it was bought (instead of writing "Unknown").
+- *Next:* tree-service demo data and video.

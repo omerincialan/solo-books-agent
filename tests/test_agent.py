@@ -106,3 +106,16 @@ def test_bad_tool_arguments_go_back_to_the_model_as_errors(monkeypatch):
 def test_values_are_written_raw_never_as_formulas(fake_sheet):
     books.add("expense", {"date": "2026-10-28", "vendor": "=IMPORTXML(\"evil\")", "total": 1, "category": "Other"})
     assert fake_sheet.tabs["Expenses"].rows[1][3] == "=IMPORTXML(\"evil\")"
+
+
+def test_expense_without_a_store_is_recorded_without_vendor(monkeypatch):
+    model = use_model(monkeypatch, [
+        [("record_expense", {"date": "2026-10-28", "total": 23, "category": "Equipment & parts", "notes": "chain oil"})],
+        "✅ Recorded chain oil $23 (E1234). Where did you buy it?",
+    ])
+    agent.run("bought chain oil for 23 bucks")
+    entry = books.entries("expense")[0]
+    assert entry["vendor"] is None and entry["total"] == 23
+    tools = {t["function"]["name"]: t["function"]["parameters"] for t in model.requests[0]["tools"]}
+    assert "vendor" not in tools["record_expense"]["required"]
+    assert "never write \"Unknown\"" in model.requests[0]["messages"][0]["content"]

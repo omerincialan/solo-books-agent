@@ -43,7 +43,7 @@ def _record(kind, fields, confirm, ctx):
     return books.add(kind, fields)
 
 
-def record_expense(date, vendor, total, category, tax=None, paid_with=None, notes=None, receipt_number=None,
+def record_expense(date, total, category, vendor=None, tax=None, paid_with=None, notes=None, receipt_number=None,
                    confirm=False, _ctx=None):
     return _record("expense", dict(date=date, vendor=vendor, total=total, tax=tax, category=category,
                                    paid_with=paid_with, notes=notes, photo=_photo_for(receipt_number, _ctx),
@@ -138,7 +138,7 @@ def _schema(categories):
               "receipt_number": {"type": "integer", "description":
                   "When several receipt images were sent: which image (1, 2, 3...) this expense comes from"},
               "confirm": confirm},
-             ["date", "vendor", "total", "category"]),
+             ["date", "total", "category"]),
         tool("record_income", "Record money the owner received from a customer.",
              {"date": date, "payer": text, "amount": number,
               "paid_with": {**text, "description": "e.g. cash, Venmo, Zelle, check"},
@@ -166,7 +166,7 @@ def _schema(categories):
 def _system_prompt(trade, recent):
     lines = "\n".join(
         f"- {e['id']} {e['kind']} {e.get('date')} "
-        + {"expense": f"{e.get('vendor')} ${e.get('total')} [{e.get('category')}]",
+        + {"expense": f"{e.get('vendor') or '(no vendor)'} ${e.get('total')} [{e.get('category')}]",
            "income": f"from {e.get('payer')} ${e.get('amount')}",
            "trip": f"{e.get('miles')} mi to {e.get('destination')}"}[e["kind"]]
         for e in recent) or "- (nothing recorded yet)"
@@ -178,6 +178,8 @@ How to work:
 - Record things only by calling tools. Never say something is saved, changed or deleted unless a tool result shows it.
 - One message can mention several things (a trip, a purchase and a payment): record each one separately.
 - If the amount (or miles) is missing, ask instead of guessing. If a trip has no business purpose, record it and ask what it was for.
+  If an expense doesn't say where it was bought, record it without a vendor (never write "Unknown") and ask where;
+  when they answer, set the vendor with update_entry.
 - "Fix it", "delete that" etc. refer to the most recent entries below; use their IDs. Use find_entries to locate older ones.
 - For any question about money or miles, call get_totals or find_entries and quote the exact numbers from the result.
   If get_totals lists possible_duplicates, point them out with their IDs and offer to delete the extra one.

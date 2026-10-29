@@ -72,7 +72,7 @@ def problems(kind: str, new: dict, existing: list, today: str) -> list:
 
 
 def describe(entry: dict) -> str:
-    return {"expense": lambda e: f"{e.get('vendor')} ${e.get('total')} ({e.get('category')})",
+    return {"expense": lambda e: f"{e.get('vendor') or '(no vendor)'} ${e.get('total')} ({e.get('category')})",
             "income": lambda e: f"${e.get('amount')} from {e.get('payer')}",
             "trip": lambda e: f"{e.get('miles')} mi to {e.get('destination')}"}[entry["kind"]](entry)
 
