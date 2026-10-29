@@ -30,8 +30,12 @@ TABS = {
         ("paid_on", "Paid on"), ("paid_with", "Paid with"), ("income_id", "Income entry"),
         ("link", "Invoice link"), ("token", "Token"), ("last_reminder", "Last reminder"), ("notes", "Notes"),
     ]),
+    "client": ("Clients", [
+        ("id", "ID"), ("recorded_at", "Recorded at"), ("name", "Name"), ("phone", "Phone"), ("email", "Email"),
+        ("address", "Address"), ("notes", "Notes"), ("source", "Source"),
+    ]),
 }
-PREFIX = {"invoice": "INV-", "expense": "E", "income": "I", "trip": "T"}  # longest first: INV- before I
+PREFIX = {"invoice": "INV-", "expense": "E", "income": "I", "trip": "T", "client": "C"}  # INV- before I
 NUMBER_FIELDS = {"total", "tax", "amount", "miles", "rate", "deduction"}
 
 _sheet = None

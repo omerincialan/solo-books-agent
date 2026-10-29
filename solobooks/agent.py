@@ -9,7 +9,7 @@ import datetime
 import json
 from zoneinfo import ZoneInfo
 from openai import OpenAI
-from . import books, checks, config, invoices
+from . import books, checks, clients, config, invoices
 from .trades import get_trade
 
 client = OpenAI(base_url=config.META_BASE_URL, api_key=config.MODEL_API_KEY or "not-set")
@@ -114,9 +114,28 @@ def get_totals(start_date=None, end_date=None, _ctx=None):
 
 
 def create_invoice(client, items, due_date=None, due_in_days=None, notes=None, _ctx=None):
-    invoice = invoices.create(client, items, today(), due_date=due_date, due_in_days=due_in_days, notes=notes)
+    record, candidates = clients.resolve(client, source=_ctx.get("source"))
+    if candidates:
+        return {"not_created": True, "ambiguous_client": [{"id": c["id"], "name": c["name"], "address": c.get("address")}
+                                                          for c in candidates],
+                "hint": "Ask the owner which client, then call again with that client's exact name"}
+    invoice = invoices.create(record["name"], items, today(), due_date=due_date, due_in_days=due_in_days, notes=notes)
     return {k: invoice.get(k) for k in ("id", "client", "total", "issued", "due", "link")} | {
-        "items": invoices.items_of(invoice)}
+        "items": invoices.items_of(invoice), "client_id": record["id"], "client_email": record.get("email")}
+
+
+def add_client(name, phone=None, email=None, address=None, notes=None, confirm=False, _ctx=None):
+    return clients.add(name, phone=phone, email=email, address=address, notes=notes,
+                       source=_ctx.get("source"), confirm=confirm)
+
+
+def update_client(client_id, changes=None, append_note=None, _ctx=None):
+    return clients.update(client_id, changes or {}, append_note=append_note) or {"error": f"No client {client_id}"}
+
+
+def find_clients(query, _ctx=None):
+    found = clients.find(query)
+    return {"count": len(found), "clients": [clients.summary(c, today()) for c in found[:5]]}
 
 
 def list_invoices(_ctx=None):
@@ -135,7 +154,7 @@ def mark_invoice_paid(invoice_id, paid_with, date=None, _ctx=None):
 
 TOOLS = {f.__name__: f for f in (record_expense, record_income, record_trip, update_entry,
                                   delete_entry, find_entries, get_totals, create_invoice, list_invoices,
-                                  mark_invoice_paid)}
+                                  mark_invoice_paid, add_client, update_client, find_clients)}
 
 
 def _schema(categories):
@@ -194,6 +213,18 @@ def _schema(categories):
         tool("list_invoices", "Unpaid invoices with days overdue, total owed and an aging summary.", {}, []),
         tool("mark_invoice_paid", "Mark an open invoice paid (cash, check, Zelle...). Also records the income.",
              {"invoice_id": text, "paid_with": text, "date": date}, ["invoice_id", "paid_with"]),
+        tool("add_client", "Add a client to the client list (from a text, voice note or a photo of a business card).",
+             {"name": text, "phone": text, "email": text, "address": text, "notes": text,
+              "confirm": {"type": "boolean", "description": "Only true after the owner confirmed it is a new client "
+                                                            "despite possible_existing"}},
+             ["name"]),
+        tool("update_client", "Change a client's details, or add a note (gate codes, preferences...).",
+             {"client_id": text, "changes": {"type": "object", "description":
+                 "Fields to change: name, phone, email, address, notes"},
+              "append_note": {**text, "description": "A note to add to the client's existing notes"}},
+             ["client_id"]),
+        tool("find_clients", "Look up clients by name, phone or email, with their contact details and exact numbers: "
+                             "invoices, billed, received, owed, average days to pay.", {"query": text}, ["query"]),
     ]
 
 
@@ -230,6 +261,10 @@ How to work:
   list_invoices), call mark_invoice_paid instead of record_income; it records the income too. When asked for a
   reminder, write a short, polite message in the owner's voice with the invoice number, amount, due date and link
   (firmer if over 30 days overdue) for the owner to forward.
+- Clients: use add_client for new customers, update_client for changes and notes ("gate code 4471"), and
+  find_clients for questions about a customer ("what's the Hendersons' address?", "tell me about Lee"). A photo of a
+  business card or contact details is a new client, not a receipt. If add_client returns possible_existing or
+  create_invoice returns ambiguous_client, ask the owner which one; never guess.
 
 Your reply is a text message: plain text, no markdown, short (max 8 lines).
 Confirm what you did with the entry IDs, e.g. "✅ Recorded fuel $64.10 at Shell (E3F9A)".

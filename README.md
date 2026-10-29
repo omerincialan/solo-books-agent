@@ -54,6 +54,11 @@ right. Showing what was heard lets the owner catch mistakes.)
   pays by card, the invoice is marked paid, the income is recorded and the owner gets a text, exactly
   once. Cash or check payments close the matching invoice too. Each morning, overdue invoices get a
   nudge to the owner with a reminder written by Muse Spark, ready to forward.
+- **Client list:** "New client Mike Henderson, 650-555-0142, mike@example.com, 12 Oak St", a
+  **photo of a business card**, or "the Hendersons' gate code is 4471" keep a **Clients** tab up to
+  date. "Tell me about the Hendersons" returns their contact details and exact numbers (billed,
+  received, owed, average days to pay). Invoices are linked to the right client; an ambiguous name
+  ("Lee" when there are two) is never guessed: the agent asks.
 
 ## How Meta's models are used
 
@@ -75,7 +80,7 @@ flowchart LR
     M --> A
     S -- text --> A[Muse Spark agent with tools]
     A -- record / fix / delete / find / totals --> C{Checks: duplicates, typos}
-    C --> G[(Google Sheet: Expenses, Income, Mileage, Invoices)]
+    C --> G[(Google Sheet: Expenses, Income, Mileage, Invoices, Clients)]
     A -- create_invoice --> I[Invoice page: Pay now + PDF]
     I -- client pays --> ST[Stripe Checkout]
     ST -- confirmed by the server --> G
@@ -108,6 +113,7 @@ flowchart LR
 | `solobooks/books.py` | The Google Sheet ledger (add / update / delete / list, with IDs) |
 | `solobooks/checks.py` | Duplicate and sanity checks run before anything is recorded |
 | `solobooks/shoebox.py` | SAM 3.1: finds receipts, cuts them out, draws the traced outlines |
+| `solobooks/clients.py` | Client list: loose name matching, duplicate check, notes, exact per-client numbers |
 | `solobooks/invoices.py` | Invoices: exact totals, numbering, PDF, Stripe Checkout, paid-exactly-once |
 | `scripts/daily_nudge.py` | Daily overdue-invoice nudge with Muse Spark reminder drafts (run by cron) |
 | `solobooks/voice.py` | Converts voice notes to WAV and transcribes them with Muse Voice Transcribe |
@@ -174,4 +180,8 @@ Oct 27. Progress log:
   numbering and due dates in code), a private invoice page with Stripe **Pay now** and **Download
   PDF**, card payments confirmed with Stripe and recorded exactly once, cash/check payments closing
   the matching invoice, "who owes me?" with an aging summary, and a daily overdue nudge with
-  reminders drafted by Muse Spark.
+  reminders drafted by Muse Spark. Tested live: invoice by text, Stripe test-card payment, and the
+  "paid" text arrived with the income recorded.
+- **Oct 29** – Client list: a Clients tab filled by text, voice or a photo of a business card;
+  loose name matching ("the Hendersons" = "Mike Henderson") with duplicate checks; notes; exact
+  per-client numbers; invoices resolve to the right client, and ambiguous names are asked about.
