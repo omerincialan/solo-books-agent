@@ -24,8 +24,14 @@ TABS = {
         ("destination", "To"), ("purpose", "Purpose"), ("rate", "Rate per mile"),
         ("deduction", "Deduction"), ("source", "Source"),
     ]),
+    "invoice": ("Invoices", [
+        ("id", "Invoice"), ("recorded_at", "Recorded at"), ("issued", "Issued"), ("client", "Client"),
+        ("items", "Items"), ("total", "Total"), ("due", "Due"), ("status", "Status"),
+        ("paid_on", "Paid on"), ("paid_with", "Paid with"), ("income_id", "Income entry"),
+        ("link", "Invoice link"), ("token", "Token"), ("last_reminder", "Last reminder"), ("notes", "Notes"),
+    ]),
 }
-PREFIX = {"expense": "E", "income": "I", "trip": "T"}
+PREFIX = {"invoice": "INV-", "expense": "E", "income": "I", "trip": "T"}  # longest first: INV- before I
 NUMBER_FIELDS = {"total", "tax", "amount", "miles", "rate", "deduction"}
 
 _sheet = None
@@ -90,7 +96,7 @@ def _with_deduction(entry: dict) -> dict:
 def add(kind: str, fields: dict) -> dict:
     entry = {f: fields.get(f) for f in _fields(kind)}
     entry.update(kind=kind,
-                 id=PREFIX[kind] + secrets.token_hex(2).upper(),
+                 id=fields.get("id") or PREFIX[kind] + secrets.token_hex(2).upper(),
                  recorded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"))
     _with_deduction(entry)
     # RAW so text from a receipt or message is never run as a spreadsheet formula

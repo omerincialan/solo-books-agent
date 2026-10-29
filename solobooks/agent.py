@@ -9,7 +9,7 @@ import datetime
 import json
 from zoneinfo import ZoneInfo
 from openai import OpenAI
-from . import books, checks, config
+from . import books, checks, config, invoices
 from .trades import get_trade
 
 client = OpenAI(base_url=config.META_BASE_URL, api_key=config.MODEL_API_KEY or "not-set")
@@ -113,8 +113,29 @@ def get_totals(start_date=None, end_date=None, _ctx=None):
     }
 
 
+def create_invoice(client, items, due_date=None, due_in_days=None, notes=None, _ctx=None):
+    invoice = invoices.create(client, items, today(), due_date=due_date, due_in_days=due_in_days, notes=notes)
+    return {k: invoice.get(k) for k in ("id", "client", "total", "issued", "due", "link")} | {
+        "items": invoices.items_of(invoice)}
+
+
+def list_invoices(_ctx=None):
+    return invoices.open_invoices(today())
+
+
+def mark_invoice_paid(invoice_id, paid_with, date=None, _ctx=None):
+    invoice, newly_paid = invoices.mark_paid(invoice_id, paid_with, date or today(), source=_ctx.get("source"))
+    if invoice is None:
+        return {"error": f"No invoice {invoice_id}"}
+    if not newly_paid:
+        return {"already_paid": True, "invoice": invoice["id"], "paid_on": invoice.get("paid_on")}
+    return {"paid": invoice["id"], "client": invoice["client"], "amount": invoice["total"],
+            "income_entry": invoice["income_id"]}
+
+
 TOOLS = {f.__name__: f for f in (record_expense, record_income, record_trip, update_entry,
-                                  delete_entry, find_entries, get_totals)}
+                                  delete_entry, find_entries, get_totals, create_invoice, list_invoices,
+                                  mark_invoice_paid)}
 
 
 def _schema(categories):
@@ -160,6 +181,19 @@ def _schema(categories):
         tool("get_totals", "Exact totals for a date range: income, expenses by category, profit, "
                            "business miles and mileage deduction.",
              {"start_date": date, "end_date": date}, []),
+        tool("create_invoice", "Create an invoice for a client. Totals are computed by the tool. Returns the "
+                               "invoice number and a private link (web page with Pay now and Download PDF).",
+             {"client": text,
+              "items": {"type": "array", "description": "Line items", "items": {"type": "object", "properties": {
+                  "description": text, "quantity": {**number, "description": "Hours, units... (1 for a flat fee)"},
+                  "unit_price": {**number, "description": "Price per unit (or the flat fee)"}},
+                  "required": ["description", "unit_price"]}},
+              "due_date": date, "due_in_days": {"type": "integer", "description": "Used if no due_date; default 14"},
+              "notes": {**text, "description": "Optional note shown on the invoice"}},
+             ["client", "items"]),
+        tool("list_invoices", "Unpaid invoices with days overdue, total owed and an aging summary.", {}, []),
+        tool("mark_invoice_paid", "Mark an open invoice paid (cash, check, Zelle...). Also records the income.",
+             {"invoice_id": text, "paid_with": text, "date": date}, ["invoice_id", "paid_with"]),
     ]
 
 
@@ -190,6 +224,12 @@ How to work:
 - Receipt photos: read the date, vendor, total, tax and payment method. When several receipt images are sent,
   record each one as its own expense with its receipt_number. If one is unreadable, say which number.
 - Expense categories: {", ".join(trade['categories'])}.
+- Invoices: to bill a client, call create_invoice with line items (description, quantity, unit_price). Reply with the
+  invoice number, total, due date and the link, plus one short line the owner can forward to the client with it.
+  For "who owes me" call list_invoices. When a client pays and has an open invoice for that amount (check
+  list_invoices), call mark_invoice_paid instead of record_income; it records the income too. When asked for a
+  reminder, write a short, polite message in the owner's voice with the invoice number, amount, due date and link
+  (firmer if over 30 days overdue) for the owner to forward.
 
 Your reply is a text message: plain text, no markdown, short (max 8 lines).
 Confirm what you did with the entry IDs, e.g. "✅ Recorded fuel $64.10 at Shell (E3F9A)".

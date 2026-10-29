@@ -30,3 +30,10 @@ MILEAGE_RATE = float(os.getenv("MILEAGE_RATE", "0.70"))
 
 DB_PATH = os.getenv("DB_PATH", "solobooks.db")
 PHOTOS_DIR = os.getenv("PHOTOS_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "photos"))
+
+# Invoices
+BUSINESS_NAME = os.getenv("BUSINESS_NAME", "")          # shown on invoices, e.g. "Dana's Tree Care"
+BUSINESS_CONTACT = os.getenv("BUSINESS_CONTACT", "")    # e.g. "(650) 555-0100 · dana@example.com"
+CURRENCY = os.getenv("CURRENCY", "usd")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")          # sk_test_... for test mode
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")  # optional: whsec_... for /stripe/webhook

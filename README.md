@@ -48,6 +48,12 @@ right. Showing what was heard lets the owner catch mistakes.)
 - **Checks before recording:** likely duplicates and typo-looking numbers are confirmed with the
   owner instead of being recorded silently; totals point out entries recorded twice.
 - **Fix by text:** "that was 64.10", "delete the chain oil". Every entry has an ID (`E…`, `I…`, `T…`).
+- **Invoices by text or voice:** "Invoice the Hendersons for the oak removal: 6 hours at 95, haul-away
+  120, due in 2 weeks" becomes INV-0001 with line items and an exact total, and a private link to
+  forward to the client: a web page with **Pay now** (Stripe) and **Download PDF**. When the client
+  pays by card, the invoice is marked paid, the income is recorded and the owner gets a text, exactly
+  once. Cash or check payments close the matching invoice too. Each morning, overdue invoices get a
+  nudge to the owner with a reminder written by Muse Spark, ready to forward.
 
 ## How Meta's models are used
 
@@ -69,7 +75,10 @@ flowchart LR
     M --> A
     S -- text --> A[Muse Spark agent with tools]
     A -- record / fix / delete / find / totals --> C{Checks: duplicates, typos}
-    C --> G[(Google Sheet: Expenses, Income, Mileage)]
+    C --> G[(Google Sheet: Expenses, Income, Mileage, Invoices)]
+    A -- create_invoice --> I[Invoice page: Pay now + PDF]
+    I -- client pays --> ST[Stripe Checkout]
+    ST -- confirmed by the server --> G
     A -- reply --> T
     T -- SMS / MMS --> P
 ```
@@ -86,6 +95,9 @@ flowchart LR
 - **Text messages, not an app.** No install, no login, no forms; it works on any phone. Replies
   are sent in the background, so slow steps (six receipts, a long voice note) never hit Twilio's
   webhook timeout.
+- **Money is exact and paid once.** Invoice totals use decimal arithmetic (half a cent rounds up).
+  A card payment is confirmed with Stripe by the server (never trusted from the browser) and
+  recorded once, even when both the redirect and the webhook report it.
 - **Safe by default:** only the owner's number is served; every request must carry a valid
   Twilio signature; values are written to the sheet as plain text (never formulas); receipt
   photos live behind unguessable links.
@@ -96,6 +108,8 @@ flowchart LR
 | `solobooks/books.py` | The Google Sheet ledger (add / update / delete / list, with IDs) |
 | `solobooks/checks.py` | Duplicate and sanity checks run before anything is recorded |
 | `solobooks/shoebox.py` | SAM 3.1: finds receipts, cuts them out, draws the traced outlines |
+| `solobooks/invoices.py` | Invoices: exact totals, numbering, PDF, Stripe Checkout, paid-exactly-once |
+| `scripts/daily_nudge.py` | Daily overdue-invoice nudge with Muse Spark reminder drafts (run by cron) |
 | `solobooks/voice.py` | Converts voice notes to WAV and transcribes them with Muse Voice Transcribe |
 | `solobooks/server.py` | Twilio webhook, background processing, replies by SMS/MMS, photo links |
 | `solobooks/trades.py` | Expense categories per trade (tree service, mechanic, tennis coach) |
@@ -113,8 +127,10 @@ Planned after the hackathon (not built yet):
   cookbook, runs quantized on a laptop with 32 GB+ of memory): financial data stays on their
   machine, with no per-message model cost. The code already talks to an OpenAI-compatible
   endpoint, so the switch is mostly configuration; it still needs testing.
-- **More of the back office by text:** income from photos of checks, invoices and payment
-  reminders, a monthly summary for the accountant.
+- **When will this client pay?** Predict each client's payment time from their history
+  (survival analysis, treating still-unpaid invoices as censored) and time reminders by risk.
+- **More of the back office by text:** income from photos of checks, a monthly summary for the
+  accountant.
 - **Connect accounting software** such as QuickBooks, in addition to the Google Sheet.
 - **More trades and more owners:** sign-up by text, one sheet per business.
 
@@ -154,3 +170,8 @@ Oct 27. Progress log:
   (replies above). Expenses without a store are recorded without a vendor and the agent asks
   where it was bought. The returned photo now traces each receipt's outline from SAM's masks.
   Tests run on GitHub Actions on every push.
+- **Oct 29** – Invoicing: invoices by text or voice (Muse Spark builds the line items; totals,
+  numbering and due dates in code), a private invoice page with Stripe **Pay now** and **Download
+  PDF**, card payments confirmed with Stripe and recorded exactly once, cash/check payments closing
+  the matching invoice, "who owes me?" with an aging summary, and a daily overdue nudge with
+  reminders drafted by Muse Spark.
