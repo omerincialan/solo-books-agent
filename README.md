@@ -54,6 +54,11 @@ right. Showing what was heard lets the owner catch mistakes.)
   pays by card, the invoice is marked paid, the income is recorded and the owner gets a text, exactly
   once. Cash or check payments close the matching invoice too. Each morning, overdue invoices get a
   nudge to the owner with a reminder written by Muse Spark, ready to forward.
+- **Text invoices to clients, only after a YES:** "Text the Hendersons their invoice" prepares the exact
+  message (business name, amount, due date, pay link, opt-out line) and shows it to the owner; the
+  server sends it from the business number only if the owner's very next message is YES (checked in
+  code, not by the model; it expires after 10 minutes). Client replies ("paid, thanks!") are
+  forwarded to the owner with the client's name.
 - **Crew hours:** "Diego and Jonny worked 4 hours today" fills a **Crew Hours** tab laid out like a
   paper timesheet (one row per date, one column per person); two jobs in a day add up, "Diego only
   worked 3 hours on the 30th" corrects it, and unknown names are asked about instead of becoming a
@@ -108,7 +113,10 @@ flowchart LR
 - **Money is exact and paid once.** Invoice totals use decimal arithmetic (half a cent rounds up).
   A card payment is confirmed with Stripe by the server (never trusted from the browser) and
   recorded once, even when both the redirect and the webhook report it.
-- **Safe by default:** only the owner's number is served; every request must carry a valid
+- **A human approves every message to a client.** The agent can only prepare a text; sending needs
+  the owner's YES as their next message, enforced by the server, so a model mistake can't text a
+  customer.
+- **Safe by default:** only the owner's number can use the assistant (other numbers are forwarded); every request must carry a valid
   Twilio signature; values are written to the sheet as plain text (never formulas); receipt
   photos live behind unguessable links.
 
@@ -118,6 +126,7 @@ flowchart LR
 | `solobooks/books.py` | The Google Sheet ledger (add / update / delete / list, with IDs) |
 | `solobooks/checks.py` | Duplicate and sanity checks run before anything is recorded |
 | `solobooks/shoebox.py` | SAM 3.1: finds receipts, cuts them out, draws the traced outlines |
+| `solobooks/outbox.py` | Client texts: builds the message, waits for the owner's YES, phone formatting |
 | `solobooks/crew.py` | Crew hours grid (date x person), crew list with rates, hours and pay reports |
 | `solobooks/clients.py` | Client list: loose name matching, duplicate check, notes, exact per-client numbers |
 | `solobooks/invoices.py` | Invoices: exact totals, numbering, PDF, Stripe Checkout, paid-exactly-once |
@@ -194,3 +203,6 @@ Oct 27. Progress log:
 - **Oct 31** – Crew hours: a date-by-person timesheet tab filled by text or voice, with add/correct
   modes, checks for unknown or ambiguous names and impossible hours, and exact hours and pay per
   person for any period. Hours are written as numbers so the owner's own formulas work.
+- **Oct 31** – Texting clients: invoices and reminders texted from the business number after an
+  explicit YES from the owner (enforced in code, expires after 10 minutes, any other message
+  cancels it); client replies forwarded to the owner with the client's name.

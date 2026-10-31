@@ -35,10 +35,12 @@ def test_rejects_unsigned_or_forged_requests(sent):
     assert sent == []
 
 
-def test_strangers_get_a_short_reply_and_no_agent(sent, monkeypatch):
+def test_messages_from_other_numbers_go_to_the_owner_not_the_agent(sent, monkeypatch):
     monkeypatch.setattr(server.agent, "run", lambda *a, **k: pytest.fail("agent must not run"))
-    r = post(server.app.test_client(), {"From": "+19998887777", "Body": "hi"})
-    assert "private assistant" in r.get_data(as_text=True) and sent == []
+    monkeypatch.setattr(server.books, "entries", lambda kind: (_ for _ in ()).throw(RuntimeError("sheet down")))
+    r = post(server.app.test_client(), {"From": "+19998887777", "Body": "thanks, paid!"})
+    assert "<Message>" not in r.get_data(as_text=True)              # no auto-reply to the client
+    assert sent == [("+15550001111", "💬 +19998887777: thanks, paid!")]
 
 
 def test_text_runs_agent_and_replies_by_sms(sent, monkeypatch):

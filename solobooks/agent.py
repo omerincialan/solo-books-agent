@@ -9,7 +9,7 @@ import datetime
 import json
 from zoneinfo import ZoneInfo
 from openai import OpenAI
-from . import books, checks, clients, config, crew, invoices
+from . import books, checks, clients, config, crew, invoices, outbox
 from .trades import get_trade
 
 client = OpenAI(base_url=config.META_BASE_URL, api_key=config.MODEL_API_KEY or "not-set")
@@ -164,7 +164,11 @@ def add_worker(name, rate=None, phone=None, notes=None, confirm=False, _ctx=None
     return crew.add_worker(name, rate=rate, phone=phone, notes=notes, confirm=confirm)
 
 
-TOOLS = {f.__name__: f for f in (log_hours, crew_hours, add_worker, record_expense, record_income, record_trip, update_entry,
+def text_client(invoice_id, message=None, phone=None, _ctx=None):
+    return outbox.prepare(config.OWNER_PHONE_NUMBER, invoice_id, message=message, phone=phone)
+
+
+TOOLS = {f.__name__: f for f in (text_client, log_hours, crew_hours, add_worker, record_expense, record_income, record_trip, update_entry,
                                   delete_entry, find_entries, get_totals, create_invoice, list_invoices,
                                   mark_invoice_paid, add_client, update_client, find_clients)}
 
@@ -235,6 +239,12 @@ def _schema(categories):
                  "Fields to change: name, phone, email, address, notes"},
               "append_note": {**text, "description": "A note to add to the client's existing notes"}},
              ["client_id"]),
+        tool("text_client", "Prepare a text message to a client about an invoice (sending it, or a payment reminder). "
+                            "It is NOT sent: the owner must reply YES to your next message.",
+             {"invoice_id": text, "message": {**text, "description": "Optional custom text, e.g. a polite reminder. "
+                                                                      "The invoice link is added if missing."},
+              "phone": {**text, "description": "Only if the client has no phone on file and the owner gave one"}},
+             ["invoice_id"]),
         tool("log_hours", "Record hours worked by crew members on one date (the Crew Hours grid).",
              {"date": date, "workers": {"type": "array", "items": {"type": "object", "properties": {
                  "name": text, "hours": number}, "required": ["name", "hours"]}},
@@ -285,6 +295,9 @@ How to work:
   list_invoices), call mark_invoice_paid instead of record_income; it records the income too. When asked for a
   reminder, write a short, polite message in the owner's voice with the invoice number, amount, due date and link
   (firmer if over 30 days overdue) for the owner to forward.
+- Texting clients: to send an invoice or a reminder to a client, call text_client. It only prepares the message.
+  Reply with the exact message and number, ending with "Reply YES to send or NO to cancel." Never say it was sent;
+  the server sends it only when the owner replies YES.
 - Crew: "Diego and Jonny worked 4 hours today" -> log_hours with each person. If log_hours returns problems
   (a name not on the crew list, ambiguous, impossible hours), ask the owner; never invent a new crew member.
   For "what do I owe Diego this week" use crew_hours (pay = hours x rate, computed by the tool; if a rate is

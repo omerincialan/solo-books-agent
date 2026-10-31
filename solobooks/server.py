@@ -10,7 +10,7 @@ from flask import Flask, Response, redirect, render_template_string, request, se
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
-from . import agent, config, invoices, memory, photos, shoebox, voice
+from . import agent, books, clients, config, invoices, memory, outbox, photos, shoebox, voice
 from .trades import get_trade
 
 app = Flask(__name__)
@@ -61,9 +61,48 @@ def read_photo(data: bytes, content_type: str):
     return [photos.data_url(c, "image/jpeg") for c in crops], links, note, annotated
 
 
+def answer_pending(number: str, text: str) -> bool:
+    """
+    If a client text is waiting for the owner's confirmation, this message decides it: YES sends it,
+    NO cancels it, anything else cancels it and is handled normally. Returns True when handled here.
+    """
+    if not memory.has_pending(number):
+        return False
+    pending = memory.take_pending(number)
+    if outbox.is_yes(text):
+        if pending is None:
+            send_text(number, "⌛ That send request expired. Ask me again and I'll prepare it.")
+        else:
+            send_text(pending["to"], pending["body"])
+            reply = f"📤 Sent {pending['invoice_id']} to {pending['client']} ({pending['to']})."
+            memory.add(number, "user", text)
+            memory.add(number, "assistant", reply)
+            send_text(number, reply)
+        return True
+    if outbox.is_no(text):
+        send_text(number, "OK, not sent.")
+        return True
+    return False
+
+
+def forward_from_client(number: str, text: str, media: list):
+    """Messages from anyone but the owner (clients replying to an invoice) go to the owner."""
+    digits = clients._digits(number)
+    try:
+        client = next((c for c in books.entries("client") if digits and clients._digits(c.get("phone")) == digits), None)
+    except Exception as e:                       # the message still reaches the owner without the name
+        print("Client lookup failed:", repr(e))
+        client = None
+    who = f"{client['name']} ({number})" if client else number
+    extra = f" [+{len(media)} attachment{'s' if len(media) > 1 else ''}]" if media else ""
+    send_text(config.OWNER_PHONE_NUMBER, f"💬 {who}: {text}{extra}")
+
+
 def handle(number: str, text: str, media: list):
     """Runs the agent for one incoming message and texts the reply back."""
     annotated = None
+    if not media and answer_pending(number, text):
+        return
     try:
         images, links, heard = [], [], []
         for url, content_type in media:
@@ -108,13 +147,13 @@ def sms():
 
     number = request.form.get("From", "").replace("whatsapp:", "")
     resp = MessagingResponse()
-    if number != config.OWNER_PHONE_NUMBER:
-        resp.message("This number is a private assistant.")
-        return str(resp)
-
     text = request.form.get("Body", "").strip()
     media = [(request.form.get(f"MediaUrl{i}"), request.form.get(f"MediaContentType{i}", ""))
              for i in range(int(request.form.get("NumMedia", 0)))]
+    if number != config.OWNER_PHONE_NUMBER:
+        # Clients replying to an invoice text: forward to the owner, never run the agent for them
+        threading.Thread(target=forward_from_client, args=(number, text, media), daemon=True).start()
+        return str(resp)
 
     if any(t.startswith("image/") for _, t in media):
         resp.message("📸 Got it, working on it...")
