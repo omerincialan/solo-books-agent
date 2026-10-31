@@ -6,17 +6,24 @@ import gspread
 
 class FakeWorksheet:
     def __init__(self, name):
-        self.name, self.rows = name, []
+        self.name, self.rows, self.col_count = name, [], 26
+
+    def add_cols(self, n):
+        self.col_count += n
 
     def append_row(self, row, value_input_option=None):
         self.rows.append(["" if v is None else str(v) for v in row])
+        self.raw = getattr(self, "raw", []) + [list(row)]   # values as sent, to check numbers stay numbers
 
     def get_all_values(self):
         return [list(r) for r in self.rows]
 
     def update(self, values, range_name, value_input_option=None):
         n = int(re.search(r"(\d+)", range_name).group(1))
+        while len(self.rows) < n:
+            self.rows.append([])
         self.rows[n - 1] = ["" if v is None else str(v) for v in values[0]]
+        self.raw = getattr(self, "raw", []) + [list(values[0])]
 
     def delete_rows(self, n):
         del self.rows[n - 1]

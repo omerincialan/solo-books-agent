@@ -34,21 +34,31 @@ TABS = {
         ("id", "ID"), ("recorded_at", "Recorded at"), ("name", "Name"), ("phone", "Phone"), ("email", "Email"),
         ("address", "Address"), ("notes", "Notes"), ("source", "Source"),
     ]),
+    "worker": ("Crew", [
+        ("id", "ID"), ("recorded_at", "Recorded at"), ("name", "Name"), ("rate", "Hourly rate"), ("phone", "Phone"),
+        ("notes", "Notes"),
+    ]),
 }
-PREFIX = {"invoice": "INV-", "expense": "E", "income": "I", "trip": "T", "client": "C"}  # INV- before I
+PREFIX = {"invoice": "INV-", "expense": "E", "income": "I", "trip": "T", "client": "C", "worker": "W"}  # INV- before I
 NUMBER_FIELDS = {"total", "tax", "amount", "miles", "rate", "deduction"}
 
 _sheet = None
 _tabs = {}
 
 
+def spreadsheet():
+    """The Google Sheet (opened once)."""
+    global _sheet
+    if _sheet is None:
+        client = gspread.service_account(filename=config.GOOGLE_SERVICE_ACCOUNT_FILE)
+        _sheet = client.open_by_key(config.GOOGLE_SHEET_ID)
+    return _sheet
+
+
 def _worksheet(kind: str):
     """Opens (or creates, with a header row) the tab for a kind of entry."""
-    global _sheet
     if kind not in _tabs:
-        if _sheet is None:
-            client = gspread.service_account(filename=config.GOOGLE_SERVICE_ACCOUNT_FILE)
-            _sheet = client.open_by_key(config.GOOGLE_SHEET_ID)
+        _sheet = spreadsheet()
         name, columns = TABS[kind]
         try:
             _tabs[kind] = _sheet.worksheet(name)

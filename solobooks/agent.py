@@ -9,7 +9,7 @@ import datetime
 import json
 from zoneinfo import ZoneInfo
 from openai import OpenAI
-from . import books, checks, clients, config, invoices
+from . import books, checks, clients, config, crew, invoices
 from .trades import get_trade
 
 client = OpenAI(base_url=config.META_BASE_URL, api_key=config.MODEL_API_KEY or "not-set")
@@ -152,7 +152,19 @@ def mark_invoice_paid(invoice_id, paid_with, date=None, _ctx=None):
             "income_entry": invoice["income_id"]}
 
 
-TOOLS = {f.__name__: f for f in (record_expense, record_income, record_trip, update_entry,
+def log_hours(date, workers, mode="add", confirm_new=False, _ctx=None):
+    return crew.log_hours(date, workers, mode=mode, confirm_new=confirm_new)
+
+
+def crew_hours(start_date=None, end_date=None, _ctx=None):
+    return crew.hours_report(start_date, end_date)
+
+
+def add_worker(name, rate=None, phone=None, notes=None, confirm=False, _ctx=None):
+    return crew.add_worker(name, rate=rate, phone=phone, notes=notes, confirm=confirm)
+
+
+TOOLS = {f.__name__: f for f in (log_hours, crew_hours, add_worker, record_expense, record_income, record_trip, update_entry,
                                   delete_entry, find_entries, get_totals, create_invoice, list_invoices,
                                   mark_invoice_paid, add_client, update_client, find_clients)}
 
@@ -223,6 +235,18 @@ def _schema(categories):
                  "Fields to change: name, phone, email, address, notes"},
               "append_note": {**text, "description": "A note to add to the client's existing notes"}},
              ["client_id"]),
+        tool("log_hours", "Record hours worked by crew members on one date (the Crew Hours grid).",
+             {"date": date, "workers": {"type": "array", "items": {"type": "object", "properties": {
+                 "name": text, "hours": number}, "required": ["name", "hours"]}},
+              "mode": {"type": "string", "enum": ["add", "set"], "description":
+                  "add: add to hours already logged that day (default); set: correct the day's hours"},
+              "confirm_new": {"type": "boolean", "description": "Only true after the owner confirmed a new crew member"}},
+             ["date", "workers"]),
+        tool("crew_hours", "Exact hours, days and pay per crew member for a date range.",
+             {"start_date": date, "end_date": date}, []),
+        tool("add_worker", "Add a crew member with their hourly rate.",
+             {"name": text, "rate": {**number, "description": "Dollars per hour"}, "phone": text, "notes": text,
+              "confirm": {"type": "boolean"}}, ["name"]),
         tool("find_clients", "Look up clients by name, phone or email, with their contact details and exact numbers: "
                              "invoices, billed, received, owed, average days to pay.", {"query": text}, ["query"]),
     ]
@@ -261,6 +285,10 @@ How to work:
   list_invoices), call mark_invoice_paid instead of record_income; it records the income too. When asked for a
   reminder, write a short, polite message in the owner's voice with the invoice number, amount, due date and link
   (firmer if over 30 days overdue) for the owner to forward.
+- Crew: "Diego and Jonny worked 4 hours today" -> log_hours with each person. If log_hours returns problems
+  (a name not on the crew list, ambiguous, impossible hours), ask the owner; never invent a new crew member.
+  For "what do I owe Diego this week" use crew_hours (pay = hours x rate, computed by the tool; if a rate is
+  missing, ask for it and set it with update_entry on the W... ID). Paying the crew is an expense in "Crew wages".
 - Clients: use add_client for new customers, update_client for changes and notes ("gate code 4471"), and
   find_clients for questions about a customer ("what's the Hendersons' address?", "tell me about Lee"). A photo of a
   business card or contact details is a new client, not a receipt. If add_client returns possible_existing or

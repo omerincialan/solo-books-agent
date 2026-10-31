@@ -4,12 +4,12 @@ TRADES = {
     "tree_service": {
         "label": "tree service owner",
         "categories": ["Fuel", "Equipment & parts", "Equipment rental", "Dump & disposal fees",
-                       "Safety gear", "Vehicle", "Subcontractors", "Insurance", "Phone & software",
+                       "Safety gear", "Vehicle", "Crew wages", "Subcontractors", "Insurance", "Phone & software",
                        "Marketing", "Meals", "Other"],
     },
     "mechanic": {
         "label": "mobile mechanic",
-        "categories": ["Parts", "Tools", "Fuel", "Shop supplies", "Vehicle", "Insurance",
+        "categories": ["Parts", "Tools", "Fuel", "Shop supplies", "Vehicle", "Crew wages", "Insurance",
                        "Phone & software", "Marketing", "Meals", "Other"],
     },
     "tennis_coach": {
